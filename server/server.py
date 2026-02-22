@@ -97,6 +97,7 @@ async def websocket_endpoint(websocket: WebSocket):
                                     if cv2.pointPolygonTest(poly, (cx, cy), False) >= 0:
                                         nieuwe_bezet_indices.append(i)
                         laatste_bezet_indices = nieuwe_bezet_indices
+                        print('hallo')
 
                     for i, vak in enumerate(parkeerGeheugen):
                         poly = np.array(vak, np.int32)
