@@ -1,5 +1,5 @@
 [phases.setup]
-nixPkgs = ["python3", "gcc", "libxcb", "libX11", "libglvnd", "glib"]
+nixPkgs = ["python3", "gcc", "xorg.libX11", "libxcb", "libglvnd", "glib"]
 
 [phases.install]
 cmds = ["python -m venv /opt/venv && . /opt/venv/bin/activate && pip install -r requirements.txt"]
