@@ -1,0 +1,8 @@
+server/venv/
+server/p-venv/
+client/node_modules/
+client/.next/
+**/__pycache__/
+.env*
+server/*.pt
+server/point.json
