@@ -9,7 +9,6 @@ from ultralytics import YOLO
 
 app = FastAPI()
 
-# CORS instellingen zodat je frontend altijd verbinding mag maken
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
@@ -17,17 +16,18 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# 1. SETUP & MODEL
-model = YOLO('yolov8n.pt') 
-FILE_PATH = 'point.json'
+# ### CLOUD FIX: Pad naar bestanden ###
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+FILE_PATH = os.path.join(BASE_DIR, 'point.json')
+MODEL_PATH = os.path.join(BASE_DIR, 'yolov8n.pt')
+
+model = YOLO(MODEL_PATH) 
 
 parkeerGeheugen = []
 huidigVak = []
 frame_count = 0
 
-# Laad bestaande vakken in bij opstarten
 def load_stored_data():
-    global parkeerGeheugen
     if os.path.exists(FILE_PATH):
         try:
             with open(FILE_PATH, 'r') as f:
@@ -44,7 +44,6 @@ parkeerGeheugen = load_stored_data()
 async def websocket_endpoint(websocket: WebSocket):
     global huidigVak, parkeerGeheugen, frame_count
     await websocket.accept()
-    print("WebSocket verbinding geopend")
     
     laatste_bezet_indices = []
 
@@ -52,14 +51,12 @@ async def websocket_endpoint(websocket: WebSocket):
         while True:
             data = await websocket.receive_text()
 
-            # A. JSON VERWERKING (Clicks & Reset)
             if data.startswith('{'):
                 msg = json.loads(data)
                 m_type = msg.get("type")
                 
                 if m_type == "click":
                     x, y = msg.get("x"), msg.get("y")
-                    # Filter ghost clicks (0,0 of ongeldig)
                     if x is not None and y is not None and (x > 5 or y > 5):
                         huidigVak.append([int(x), int(y)])
                         if len(huidigVak) == 4:
@@ -73,14 +70,10 @@ async def websocket_endpoint(websocket: WebSocket):
                     huidigVak = []
                     if os.path.exists(FILE_PATH):
                         os.remove(FILE_PATH)
-                    print("Systeem gereset.")
                 continue
 
-            # B. VIDEO FRAME VERWERKING
             if data.startswith('data:image'):
                 frame_count += 1
-                
-                # Decodeer base64 naar OpenCV beeld
                 try:
                     _, encoded = data.split(",", 1)
                     img_bytes = base64.b64decode(encoded)
@@ -89,9 +82,10 @@ async def websocket_endpoint(websocket: WebSocket):
                     continue
 
                 if img is not None:
-                    # AI Analyse elke 3 frames (voor snelheid)
-                    if frame_count % 3 == 0:
+                    # AI Analyse elke 5 frames in cloud (iets trager voor stabiliteit)
+                    if frame_count % 5 == 0:
                         nieuwe_bezet_indices = []
+                        # imgsz=320 is perfect voor snelheid in de cloud
                         results = model.track(img, persist=True, classes=[2, 7], verbose=False, imgsz=320)[0]
                         
                         if results.boxes is not None:
@@ -104,33 +98,27 @@ async def websocket_endpoint(websocket: WebSocket):
                                         nieuwe_bezet_indices.append(i)
                         laatste_bezet_indices = nieuwe_bezet_indices
 
-                    # Teken opgeslagen vakken
                     for i, vak in enumerate(parkeerGeheugen):
                         poly = np.array(vak, np.int32)
                         is_bezet = i in laatste_bezet_indices
                         kleur = (0, 0, 255) if is_bezet else (0, 255, 0)
                         cv2.polylines(img, [poly], True, kleur, 2)
-                        if is_bezet:
-                            cv2.putText(img, "BEZET", (vak[0][0], vak[0][1]-10), 
-                                        cv2.FONT_HERSHEY_SIMPLEX, 0.5, kleur, 2)
 
-                    # Teken punten van het vak waar je nu mee bezig bent
                     if huidigVak:
                         for p in huidigVak:
                             cv2.circle(img, (p[0], p[1]), 4, (0, 255, 255), -1)
 
-                    # Terugsturen naar frontend
-                    _, buffer = cv2.imencode('.jpg', img, [cv2.IMWRITE_JPEG_QUALITY, 50])
+                    _, buffer = cv2.imencode('.jpg', img, [cv2.IMWRITE_JPEG_QUALITY, 40]) # Quality 40 voor snellere stream
                     b64_str = base64.b64encode(buffer).decode('utf-8')
                     await websocket.send_text(f"data:image/jpeg;base64,{b64_str}")
 
     except WebSocketDisconnect:
-        print("Client verbinding verbroken")
+        pass
     except Exception as e:
         print(f"Server Fout: {e}")
 
 if __name__ == "__main__":
     import uvicorn
-    uvicorn.run(app, host="127.0.0.1", port=8800)
-
-    
+    # ### CLOUD FIX: Gebruik omgevingsvariabele PORT ###
+    port = int(os.environ.get("PORT", 8800))
+    uvicorn.run(app, host="0.0.0.0", port=port)
