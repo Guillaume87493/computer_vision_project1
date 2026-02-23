@@ -1,3 +1,16 @@
+import os
+import sys
+
+# Dit dwingt OpenCV om geen scherm te zoeken
+os.environ["QT_QPA_PLATFORM"] = "offscreen"
+
+# Dit helpt Python om de systeem bibliotheken te vinden
+os.environ["LD_LIBRARY_PATH"] = ":".join([
+    "/usr/lib/x86_64-linux-gnu",
+    "/lib/x86_64-linux-gnu",
+    os.environ.get("LD_LIBRARY_PATH", "")
+])
+
 import cv2
 import numpy as np
 import base64
